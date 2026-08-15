@@ -1,0 +1,193 @@
+# Tabela de merchants -> categoria. Versionada no git de proposito: e o unico
+# lugar onde mora opiniao sobre em que balde cada gasto cai, e voce quer ver a
+# mudanca no diff quando reclassificar o historico.
+#
+# As chaves sao a descricao NORMALIZADA: minuscula, sem acento, sem o sufixo do
+# cartao (•••• 5449), sem o sufixo de parcela, com o '*' dos agregadores
+# colapsado ('Shopee *Utilshome' -> 'shopee*utilshome').
+#
+# Merchant que nao casa aqui nem em 'padroes' fica PENDENTE e trava o export
+# ate voce rodar `python -m nubank review`. Isso e intencional.
+
+# Categoria -> coluna da aba Cartao da planilha.
+#   parcelas  = coluna C (Parcelas e assinaturas)
+#   essencial = coluna D (mercado, farmacia, transporte)
+#   superfluo = coluna E (delivery, compras, saidas)
+categorias:
+  assinatura: parcelas
+
+  mercado: essencial
+  padaria: essencial
+  farmacia: essencial
+  transporte: essencial
+  saude: essencial
+  contas: essencial
+  educacao: essencial
+  pet: essencial
+
+  delivery: superfluo
+  restaurante: superfluo
+  compras: superfluo
+  lazer: superfluo
+  vestuario: superfluo
+  presentes: superfluo
+
+# Prefixos de agregador. Servem para o merchant novo que ja nasce dentro de um
+# marketplace conhecido: um restaurante inedito no iFood e delivery sem que
+# voce precise aprovar cada um. Testados do mais longo para o mais curto.
+padroes:
+  - prefixo: "ifd*"
+    categoria: delivery
+  - prefixo: "shopee*"
+    categoria: compras
+  - prefixo: "amazonmktplc*"
+    categoria: compras
+
+merchants:
+  # -- transporte -------------------------------------------------------------
+  "uber - nupay": transporte
+  "99app*99app": transporte
+  "dl*99 ride": transporte
+  "postovila": transporte
+  "posto cauipe": transporte
+  "posto via mar": transporte
+
+  # -- assinaturas e recorrentes ---------------------------------------------
+  "render.com": assinatura
+  "github, inc": assinatura
+  "cloudflare": assinatura
+  "anthropic*claude sub": assinatura
+  "claude.ai subscription": assinatura
+  "tim*tim": assinatura
+  "nu seguro vida": assinatura
+  "pg*tec concursos tecc": assinatura
+  "ifd*ifood club": assinatura
+  "uber*one membership u": assinatura
+  "amazonprimebr": assinatura
+  "amazon ad free for pri": assinatura
+  "google youtube": assinatura
+  "google youtubepremium": assinatura
+  "dl*google youtub": assinatura
+
+  # -- mercado ----------------------------------------------------------------
+  "supermercado cometa": mercado
+  "extra hiper-1339": mercado
+  "super do povo": mercado
+  "super santiago": mercado
+  "mercadinho sao luiz": mercado
+  "centerbox": mercado
+  "ifd*centerbox supermer": mercado
+  "sou organico": mercado
+  "super guara iguatemi": mercado
+  "sams club lj 4086 wash": mercado
+  "hipermarket": mercado
+  "supermercadomae": mercado
+  "ifd*atacadao": mercado
+
+  # -- padaria ----------------------------------------------------------------
+  "panificadora e confei": padaria
+  "panificadora iolanda": padaria
+  "tribo do pao": padaria
+
+  # -- farmacia ---------------------------------------------------------------
+  "pague menos": farmacia
+  "extra farma": farmacia
+  "farmacia gaste menos": farmacia
+  "silfarma": farmacia
+  "farm sao bento": farmacia
+  "ifd*raia drogasil": farmacia
+  "drogasil": farmacia
+
+  # -- pet --------------------------------------------------------------------
+  "pet shop com carinho": pet
+
+  # -- contas e impostos ------------------------------------------------------
+  "sefaz ceara-dae-cod": contas
+  "prefeitura municipal": contas
+  "condominio civil do sh": contas
+
+  # -- delivery (iFood nominal; o resto cai no padrao ifd*) -------------------
+  "ifd*rma comercio de fr": delivery
+  "ifd*divina grill comer": delivery
+  "ifd*sorveteria 50 sabo": delivery
+  "ifd*madero industria e": delivery
+  "ifd*kalzone industria": delivery
+  "ifd*global products so": delivery
+  "ifd*we love pizza 2": delivery
+  "ifd*empreendimentos pa": delivery
+  "ifd*costa mendes delic": delivery
+  "ifd*p1 alimentos": delivery
+  "ifd*p8 alimentos": delivery
+  "ifd*horizonte restaura": delivery
+  "ifd*mlvs comercial de": delivery
+  "ifd*fontenelle industr": delivery
+  "ifd*nc industria e com": delivery
+  "ifd*sbs servicos de bu": delivery
+  "ifd*pizzaria e academi": delivery
+  "ifd*sued gastronomia c": delivery
+  "ifd*mf comercial de al": delivery
+  "ifd*arcos dourados com": delivery
+  "ifd*ma barroso": delivery
+  "ifd*pim food ws comerc": delivery
+
+  # -- restaurantes, cafes, lanches ------------------------------------------
+  "alda lanches": restaurante
+  "restaurante sesc cisp": restaurante
+  "cafe com flores": restaurante
+  "ribeira gastrobar": restaurante
+  "coco bambu sul": restaurante
+  "grupo madero": restaurante
+  "acoara bistro": restaurante
+  "dafuji chocolates": restaurante
+  "fogao a lenha": restaurante
+  "cm gelatos eireli": restaurante
+  "kfc shop parangaba": restaurante
+  "tio armenio": restaurante
+  "mp*restobar": restaurante
+  "sheng chi grill": restaurante
+  "la boleria gourmet": restaurante
+  "churrascaria o wagner": restaurante
+  "restaurante caravelle": restaurante
+  "grelha sul": restaurante
+  "loucos por coxinhas": restaurante
+  "the ribs smoke house": restaurante
+  "cantina da fisica": restaurante
+  "bolaria boca do forno": restaurante
+  "divino fogao-comida d": restaurante
+  "emporio da tapioca": restaurante
+  "sorvete alimenta": restaurante
+  "villa's burguer": restaurante
+  "mac donalds": restaurante
+  "burger king": restaurante
+  "dona lanna pastelaria": restaurante
+  "skina do baiao i": restaurante
+  "canto do baiao": restaurante
+  "dindin do badida": restaurante
+  "star midia e cafe": restaurante
+
+  # -- compras ----------------------------------------------------------------
+  "amazon": compras
+  "amazon marketplace": compras
+  "amazon br iv - nupay": compras
+  "amazon br vi - nupay": compras
+  "americanas": compras
+  "fortaleza ig*kalunga": compras
+  "arte e papel": compras
+  "mp*lojinhadomost": compras
+  "at home silva": compras
+  "vmt*at home s": compras
+  "vmt*neektoy b": compras
+  "pbkids": compras
+  "paloma variedades": compras
+  "soluar joiais": compras
+
+  # -- lazer ------------------------------------------------------------------
+  "pontes e landim hotela": lazer
+  "game station": lazer
+  "game sttion": lazer
+  "idealizei festas": lazer
+  "ebn*playstation": lazer
+
+  # -- vestuario --------------------------------------------------------------
+  "lojas renner fl": vestuario
+  "centauro ce47": vestuario

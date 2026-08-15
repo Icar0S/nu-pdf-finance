@@ -1,0 +1,17 @@
+.env
+
+# Dados financeiros. Nada disso vai para o git.
+planejamento-avancado-financeiro-icaro26.xlsx
+*.xlsx
+/faturas
+/backups
+faturas.db
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
