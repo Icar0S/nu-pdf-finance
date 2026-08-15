@@ -173,10 +173,27 @@ Nubank), e como C/D/E vem das transacoes, usar o resumo faria F oscilar entre
   `H`, o total de `H` e as formulas de `F`. Nada fora disso e tocado.
 - Rodar o export duas vezes seguidas nao muda nada na segunda.
 
-O round-trip do openpyxl foi verificado contra a planilha real: as 21 formulas
-de matriz do Painel e do Controle Mensal saem byte a byte identicas, e estilos,
-formatos de numero, larguras de coluna e formatacao condicional sao
-preservados.
+### Por que a escrita nao usa openpyxl
+
+O `openpyxl.save()` reescreve o arquivo inteiro, e nesta planilha isso **perde
+os atributos `apply*` dos estilos**: 50 `applyNumberFormat`, 68 `applyFont`, 54
+`applyBorder`, 7 `applyFill`. Sem `applyNumberFormat="1"`, o Excel ignora o
+`numFmtId` da celula e herda o formato do estilo nomeado, que aqui e `General`.
+Na pratica: a coluna de mes passa a mostrar `46023` em vez de `jan/26`, e os
+valores em reais viram numero cru.
+
+Pior, o openpyxl nao enxerga o proprio estrago — ele le o `numFmtId` direto e
+ignora a flag. Conferir a saida dele com ele mesmo da sempre verde.
+
+Entao `nubank/xlsx.py` trata o .xlsx como o zip que ele e: le todas as partes,
+altera **so** o XML da aba Cartao (mais o `calcPr` do workbook, para o Excel
+recalcular ao abrir) e grava as outras byte a byte. Na planilha real isso
+significa 30 das 32 partes intactas, `styles.xml` e `sharedStrings.xml`
+inclusos.
+
+O openpyxl continua sendo usado para ler, o que nao danifica nada.
+
+Os testes comparam o **zip cru**, nunca a leitura do openpyxl.
 
 ## Arquivos
 

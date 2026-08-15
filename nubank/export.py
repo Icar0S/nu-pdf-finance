@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import csv
 import shutil
-from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -37,6 +36,7 @@ import openpyxl
 from .errors import ErroExport
 from .models import Bucket, Fatura
 from .money import format_brl, to_float
+from .xlsx import Planilha
 
 ABA = "Cartao"
 LINHA_CABECALHO = 3
@@ -197,29 +197,6 @@ def _mudancas_layout(ws) -> list[Mudanca]:
     return mudancas
 
 
-def _aplica_layout(ws) -> None:
-    """Escreve o que _mudancas_layout previu, e copia o estilo das vizinhas."""
-    celula_cab = f"{COLUNA_GASTO}{LINHA_CABECALHO}"
-    ws[celula_cab] = CABECALHO_GASTO
-    ws[celula_cab]._style = copy(ws[f"{MOLDE_CABECALHO}{LINHA_CABECALHO}"]._style)
-
-    largura = ws.column_dimensions[COLUNA_GASTO].width
-    if not largura or largura < LARGURA_GASTO:
-        ws.column_dimensions[COLUNA_GASTO].width = LARGURA_GASTO
-
-    linhas = _linhas_de_dados(ws)
-    for linha in linhas:
-        ws[f"F{linha}"] = formula_nao_classificado(linha)
-        ws[f"{COLUNA_GASTO}{linha}"]._style = copy(ws[f"{MOLDE_VALOR}{linha}"]._style)
-
-    total = _localiza_total(ws)
-    if total and linhas:
-        ws[f"{COLUNA_GASTO}{total}"] = formula_total(
-            COLUNA_GASTO, linhas[0], linhas[-1]
-        )
-        ws[f"{COLUNA_GASTO}{total}"]._style = copy(ws[f"{MOLDE_VALOR}{total}"]._style)
-
-
 def _alvos(fatura: Fatura) -> dict[str, object]:
     """Coluna -> valor que a fatura deve gravar. Uma fonte so, usada pelo
     dry-run e pela escrita, para os dois nunca discordarem."""
@@ -299,22 +276,67 @@ def faz_backup(planilha: Path, pasta: Path | None = None) -> Path:
 
 
 def aplica(planilha: str | Path, faturas: list[Fatura]) -> tuple[Path, list[Mudanca]]:
-    """Escreve de verdade. Devolve (caminho do backup, mudancas aplicadas)."""
+    """Escreve de verdade. Devolve (caminho do backup, mudancas aplicadas).
+
+    A escrita e cirurgica (ver nubank/xlsx.py): so o XML da aba Cartao e o
+    calcPr do workbook sao tocados, e todas as outras partes do zip saem byte a
+    byte iguais. openpyxl e usado apenas para localizar as linhas, o que e
+    leitura e nao danifica nada.
+    """
     planilha = Path(planilha)
     mudancas = [m for m in planeja(planilha, faturas) if m.mudou]
-    backup = faz_backup(planilha)
 
     wb = openpyxl.load_workbook(planilha)
     ws = wb[ABA]
-    # O layout vem primeiro: H precisa existir e ter estilo antes de receber
-    # valor, senao os numeros entram sem formato de moeda.
-    _aplica_layout(ws)
-    for fatura in faturas:
-        linha = _localiza_linha(ws, fatura.competencia)
-        for coluna, valor in _alvos(fatura).items():
-            ws[f"{coluna}{linha}"] = valor
-    wb.save(planilha)
+    linhas_por_competencia = {
+        f.competencia: _localiza_linha(ws, f.competencia) for f in faturas
+    }
+    linhas_dados = _linhas_de_dados(ws)
+    linha_total = _localiza_total(ws)
     wb.close()
+
+    backup = faz_backup(planilha)
+
+    doc = Planilha(planilha)
+    aba = doc.aba(ABA)
+
+    # Layout primeiro: H precisa existir com o estilo da vizinha antes de
+    # receber valor, senao entra sem formato de moeda.
+    aba.define_texto(
+        f"{COLUNA_GASTO}{LINHA_CABECALHO}",
+        CABECALHO_GASTO,
+        estilo=aba.estilo(f"{MOLDE_CABECALHO}{LINHA_CABECALHO}"),
+    )
+    aba.largura_coluna(COLUNA_GASTO, LARGURA_GASTO)
+
+    # F4 e a mestra de uma formula compartilhada (ref F4:F15): reescrever o
+    # texto dela ja desloca as irmas por linha. As demais so entram aqui se a
+    # planilha nao usar formula compartilhada.
+    for linha in linhas_dados:
+        celula = f"F{linha}"
+        if aba.formula(celula) is not None:
+            aba.define_formula(celula, formula_nao_classificado(linha))
+
+    if linha_total and linhas_dados:
+        aba.define_formula(
+            f"{COLUNA_GASTO}{linha_total}",
+            formula_total(COLUNA_GASTO, linhas_dados[0], linhas_dados[-1]),
+            estilo=aba.estilo(f"{MOLDE_VALOR}{linha_total}"),
+        )
+
+    for fatura in faturas:
+        linha = linhas_por_competencia[fatura.competencia]
+        molde = aba.estilo(f"{MOLDE_VALOR}{linha}")
+        for coluna, valor in _alvos(fatura).items():
+            ref = f"{coluna}{linha}"
+            if isinstance(valor, str):
+                aba.define_texto(ref, valor)
+            else:
+                estilo = None if aba.existe(ref) else molde
+                aba.define_numero(ref, valor, estilo=estilo)
+
+    doc.recalcular_ao_abrir()
+    doc.salva()
     return backup, mudancas
 
 

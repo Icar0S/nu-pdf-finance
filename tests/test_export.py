@@ -19,6 +19,7 @@ from nubank.normalize import normaliza
 from .conftest import RAIZ
 
 PLANILHA_REAL = RAIZ / "planejamento-avancado-financeiro-icaro26.xlsx"
+ARQUIVO_CARTAO = "sheet5.xml"  # a aba Cartao e a 5a da planilha
 
 
 @pytest.fixture
@@ -183,27 +184,60 @@ def test_csv_de_detalhe(tmp_path, fatura):
 
 
 @pytest.mark.skipif(not PLANILHA_REAL.exists(), reason="planilha real ausente")
-def test_round_trip_na_planilha_real_preserva_estrutura(tmp_path, fatura):
-    """openpyxl reescreve o arquivo inteiro; garante que nada se perde no caminho."""
+def test_escrita_na_planilha_real_so_toca_a_aba_cartao(tmp_path, fatura):
+    """A garantia forte: nenhuma outra parte do arquivo e reescrita.
+
+    Comparado no zip cru, e nao pelo openpyxl. Foi conferir openpyxl com
+    openpyxl que deixou passar a perda dos atributos apply* dos estilos, que no
+    Excel virava a coluna de mes mostrando 46023 em vez de jan/26.
+    """
     import shutil
+    import zipfile
 
     copia = tmp_path / PLANILHA_REAL.name
     shutil.copy2(PLANILHA_REAL, copia)
 
-    antes = openpyxl.load_workbook(copia)
-    abas_antes = antes.sheetnames
-    formatos_antes = {
-        ws.title: len(ws.conditional_formatting._cf_rules) for ws in antes.worksheets
-    }
-    formula_antes = antes["Controle Mensal"]["F11"].value
-    parametro_antes = antes["Parametros"]["C6"].value
+    with zipfile.ZipFile(copia) as z:
+        antes = {n: z.read(n) for n in z.namelist()}
 
     aplica(copia, [fatura])
 
-    depois = openpyxl.load_workbook(copia)
-    assert depois.sheetnames == abas_antes
-    assert {
-        ws.title: len(ws.conditional_formatting._cf_rules) for ws in depois.worksheets
-    } == formatos_antes
-    assert depois["Controle Mensal"]["F11"].value == formula_antes
-    assert depois["Parametros"]["C6"].value == parametro_antes
+    with zipfile.ZipFile(copia) as z:
+        depois = {n: z.read(n) for n in z.namelist()}
+
+    assert set(antes) == set(depois), "alguma parte do arquivo sumiu ou apareceu"
+    alteradas = {n for n in antes if antes[n] != depois[n]}
+
+    # workbook.xml so entra quando o fullCalcOnLoad ainda nao estava marcado,
+    # entao ele e opcional; a aba Cartao e obrigatoria.
+    permitidas = {"xl/workbook.xml", f"xl/worksheets/{ARQUIVO_CARTAO}"}
+    assert alteradas <= permitidas, f"partes inesperadas: {alteradas - permitidas}"
+    assert f"xl/worksheets/{ARQUIVO_CARTAO}" in alteradas
+
+    # As que mais importam: estilos e strings sao compartilhados por todas as
+    # abas, e um deslize neles estraga a planilha inteira.
+    for parte in ("xl/styles.xml", "xl/sharedStrings.xml", "xl/worksheets/sheet2.xml"):
+        assert antes[parte] == depois[parte], f"{parte} foi reescrito"
+
+
+@pytest.mark.skipif(not PLANILHA_REAL.exists(), reason="planilha real ausente")
+def test_escrita_na_planilha_real_preserva_as_flags_de_estilo(tmp_path, fatura):
+    """Sem applyNumberFormat="1", o Excel ignora o numFmtId e usa General."""
+    import shutil
+    import zipfile
+
+    copia = tmp_path / PLANILHA_REAL.name
+    shutil.copy2(PLANILHA_REAL, copia)
+
+    def flags(caminho):
+        with zipfile.ZipFile(caminho) as z:
+            estilos = z.read("xl/styles.xml").decode()
+        return {
+            f: estilos.count(f'{f}="1"')
+            for f in ("applyNumberFormat", "applyFont", "applyBorder", "applyFill")
+        }
+
+    antes = flags(copia)
+    aplica(copia, [fatura])
+    assert flags(copia) == antes
+    assert antes["applyNumberFormat"] > 0, "fixture nao exercita o caso"
