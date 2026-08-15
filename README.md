@@ -5,15 +5,53 @@ Le as faturas do cartao Nubank em PDF e preenche a aba **Cartao** da planilha
 
 Nem os PDFs nem a planilha nem o banco vao para o git.
 
-## Instalacao
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Uso normal (uma vez por mes)
 
-```bash
+Coloque os PDFs novos em `faturas/` e rode:
+
+```powershell
+.\executar.ps1            # prepara tudo, importa, revisa e mostra o dry-run
+.\executar.ps1 -Apply     # idem, e escreve na planilha apos confirmar
+```
+
+O script cuida da sequencia inteira: cria o venv se nao existir, instala as
+dependencias e entao roda
+
+```
+import  ->  status  ->  review  ->  export (dry-run)  ->  export --apply
+```
+
+Sem `-Apply` ele para no dry-run e **nao escreve nada**. Se alguma fatura for
+rejeitada na reconciliacao, ou se sobrar merchant sem categoria, ele para ali
+e diz o porque.
+
+Opcoes uteis:
+
+| Flag | Efeito |
+|---|---|
+| `-Apply` | escreve na planilha (pede confirmacao) |
+| `-Force` | com `-Apply`, nao pede confirmacao |
+| `-SkipInstall` | pula venv e pip (~8s em vez do setup completo) |
+| `-SkipReview` | nao abre a revisao de merchants |
+| `-Recreate` | apaga o venv e cria de novo |
+| `-Csv detalhe.csv` | tambem grava o CSV linha a linha |
+| `-Planilha caminho.xlsx` | usa outra planilha |
+
+Se o PowerShell recusar a execucao do script, rode uma vez:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+ou chame com `powershell -ExecutionPolicy Bypass -File .\executar.ps1`.
+
+### Na mao, sem o script
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
 python -m nubank import faturas/          # le, reconcilia e grava
 python -m nubank review                   # classifica merchants novos
 python -m nubank export                   # dry-run: mostra o que mudaria
@@ -22,7 +60,7 @@ python -m nubank export --apply           # escreve na planilha
 
 Outros comandos:
 
-```bash
+```powershell
 python -m nubank status                   # resumo do que ja foi importado
 python -m nubank parcelas                 # parcelas futuras ja contratadas
 python -m nubank export --csv detalhe.csv # CSV linha a linha
@@ -101,6 +139,7 @@ cada linha para voce nao caçar um bug que nao existe.
 
 | Arquivo | O que e |
 |---|---|
+| `executar.ps1` | Roda a pipeline inteira na ordem certa, incluindo venv e dependencias. |
 | `merchants.yml` | Merchant -> categoria -> coluna. Versionado: o diff mostra toda mudanca de criterio. |
 | `faturas.db` | SQLite. Dedup por sha256 do PDF e permite reclassificar o historico sem reparsear. |
 | `backups/` | Copias da planilha, uma por `export --apply`. |
