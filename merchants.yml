@@ -191,3 +191,7 @@ merchants:
   # -- vestuario --------------------------------------------------------------
   "lojas renner fl": vestuario
   "centauro ce47": vestuario
+
+  # -- adicionados via review --
+  "loja fisica lj 16 jac": mercado
+  "nfs fortaleza off": presentes

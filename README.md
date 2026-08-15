@@ -112,6 +112,26 @@ O que nao casa em nenhuma camada fica **pendente e trava o export**. Um
 merchant desconhecido caindo em algum balde por padrao seria exatamente o erro
 silencioso que a planilha nao te deixaria enxergar.
 
+### Corrigir uma categoria errada
+
+Errou no `review`, ou mudou de ideia? Edite a linha no `merchants.yml`:
+
+```yaml
+  # -- adicionados via review --
+  "loja fisica lj 16 jac": mercado    # estava 'compras'
+```
+
+E so isso. **Nao precisa reimportar nada**: a categoria e sempre derivada da
+tabela no momento da leitura, entao o proximo `status` ou `export` ja usa o
+valor novo, retroativo a todos os meses onde aquele merchant aparece.
+
+Confira o efeito antes de escrever na planilha:
+
+```powershell
+python -m nubank status     # ve as colunas mudarem
+python -m nubank export     # dry-run, celula a celula
+```
+
 ### A coluna F da planilha
 
 `Fatura total` (coluna B) e "quanto voce gastou no periodo" **nao sao a mesma

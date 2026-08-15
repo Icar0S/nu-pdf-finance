@@ -28,6 +28,10 @@ from .reconcile import reconcilia
 
 RAIZ = Path(__file__).resolve().parent.parent
 
+# Cabecalho do bloco que o review escreve no merchants.yml. Reaproveitado entre
+# execucoes para nao acumular um cabecalho por mes.
+MARCADOR_REVIEW = "  # -- adicionados via review --"
+
 
 def _planilha_padrao() -> Path | None:
     preferida = RAIZ / "planejamento-avancado-financeiro-icaro26.xlsx"
@@ -40,7 +44,19 @@ def _planilha_padrao() -> Path | None:
 
 
 def _faturas_classificadas(conn, tabela, competencia=None) -> list[Fatura]:
-    return [classifica(f, tabela) for f in store.carrega(conn, competencia)]
+    """Le do banco e reclassifica com o merchants.yml atual.
+
+    A categoria e sempre derivada da tabela na hora da leitura, e nunca lida
+    de volta do banco: corrigir uma linha do merchants.yml passa a valer no
+    comando seguinte, sem reimportar PDF nenhum.
+
+    As colunas categoria/bucket gravadas sao uma denormalizacao para consulta
+    em SQL, e por isso sao reescritas aqui - senao o banco passaria a dizer
+    uma coisa e a ferramenta outra depois de qualquer edicao na tabela.
+    """
+    faturas = [classifica(f, tabela) for f in store.carrega(conn, competencia)]
+    store.atualiza_classificacao(conn, faturas)
+    return faturas
 
 
 # --------------------------------------------------------------------------- #
@@ -193,7 +209,11 @@ def _insere_merchants(caminho: Path, novos: dict[str, str]) -> None:
             fim = i
             break
 
-    bloco = ["", "  # -- adicionados via review --"]
+    # Um review por mes criaria um cabecalho por mes se ele fosse escrito de
+    # novo toda vez. Como a insercao e sempre no fim do bloco, o marcador que
+    # ja existe e o ultimo, e basta escrever as entradas embaixo dele.
+    ja_marcado = MARCADOR_REVIEW in linhas[inicio:fim]
+    bloco = [] if ja_marcado else ["", MARCADOR_REVIEW]
     bloco += [f'  "{m}": {c}' for m, c in sorted(novos.items())]
 
     while fim > inicio + 1 and not linhas[fim - 1].strip():
