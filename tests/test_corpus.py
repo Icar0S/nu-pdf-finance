@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 
 from nubank.classify import carrega_tabela, classifica
+from nubank.export import gasto_do_periodo
 from nubank.extract import extrai
 from nubank.models import Bucket, TipoLancamento
 from nubank.normalize import normaliza
@@ -99,6 +100,27 @@ def test_buckets_somam_o_gasto_do_periodo(caminho, tabela):
     soma += sum((t.valor for t in fatura.pendentes), start=Decimal("0.00"))
     esperado = fatura.compras + fatura.iof + fatura.outros_lancamentos
     assert abs(soma - esperado) <= Decimal("0.02")
+
+
+@requer_corpus
+@pytest.mark.parametrize("caminho", PDFS, ids=ids)
+def test_coluna_f_da_planilha_zera(caminho, tabela):
+    """C + D + E == H exatamente, para qualquer fatura sem pendente.
+
+    A coluna F da aba Cartao e `H - SOMA(C:E)`. Se essa igualdade nao for
+    exata, F fica mostrando centavos de ruido numa coluna cujo unico trabalho e
+    mostrar zero quando esta tudo classificado.
+    """
+    fatura = classifica(normaliza(extrai(caminho)), tabela)
+    classificado = sum(
+        (
+            fatura.total_bucket(b)
+            for b in (Bucket.PARCELAS, Bucket.ESSENCIAL, Bucket.SUPERFLUO)
+        ),
+        start=Decimal("0.00"),
+    )
+    pendente = sum((t.valor for t in fatura.pendentes), start=Decimal("0.00"))
+    assert classificado + pendente == gasto_do_periodo(fatura)
 
 
 @requer_corpus

@@ -6,7 +6,13 @@ import pytest
 
 from nubank.classify import carrega_tabela, classifica
 from nubank.errors import ErroExport
-from nubank.export import aplica, exporta_csv, observacao, planeja
+from nubank.export import (
+    aplica,
+    exporta_csv,
+    gasto_do_periodo,
+    observacao,
+    planeja,
+)
 from nubank.models import Bucket
 from nubank.normalize import normaliza
 
@@ -17,7 +23,11 @@ PLANILHA_REAL = RAIZ / "planejamento-avancado-financeiro-icaro26.xlsx"
 
 @pytest.fixture
 def planilha(tmp_path):
-    """Copia minima da aba Cartao, com a formula da coluna F no lugar."""
+    """Aba Cartao como ela nasceu: sem a coluna H e com a formula antiga de F.
+
+    E de proposito que a fixture use a formula velha (conferindo contra B): e
+    ela que o export precisa migrar.
+    """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Cartao"
@@ -32,6 +42,9 @@ def planilha(tmp_path):
         linha = 4 + i
         ws[f"A{linha}"] = datetime(2026, mes, 1)
         ws[f"F{linha}"] = f'=IF($B{linha}="","",$B{linha}-SUM($C{linha}:$E{linha}))'
+    ws["A16"] = "TOTAL"
+    for col in "BCDEF":
+        ws[f"{col}16"] = f"=SUM({col}4:{col}15)"
     wb.create_sheet("Outra Aba")["A1"] = "nao pode ser tocada"
     caminho = tmp_path / "planilha.xlsx"
     wb.save(caminho)
@@ -61,10 +74,56 @@ def test_escreve_na_linha_certa(planilha, fatura):
     assert ws["B4"].value is None  # janeiro fica intacto
 
 
-def test_nao_escreve_na_coluna_de_formula(planilha, fatura):
+def test_coluna_f_passa_a_conferir_contra_h(planilha, fatura):
+    """A formula antiga conferia contra B e por isso nunca zerava."""
+    ws = openpyxl.load_workbook(planilha)["Cartao"]
+    assert "$B11-SUM(" in ws["F11"].value
+
+    aplica(planilha, [fatura])
+
+    ws = openpyxl.load_workbook(planilha)["Cartao"]
+    assert ws["F11"].value == '=IF($B11="","",$H11-SUM($C11:$E11))'
+    assert str(ws["F4"].value).startswith("=IF(")  # meses vazios tambem migram
+
+
+def test_coluna_h_recebe_o_gasto_do_periodo(planilha, fatura):
     aplica(planilha, [fatura])
     ws = openpyxl.load_workbook(planilha)["Cartao"]
-    assert str(ws["F11"].value).startswith("=IF(")
+    assert ws["H3"].value == "Gasto do periodo"
+    assert ws["H11"].value == pytest.approx(float(gasto_do_periodo(fatura)))
+    assert ws["H16"].value == "=SUM(H4:H15)"
+
+
+def test_c_mais_d_mais_e_somam_h_exatamente(planilha, fatura):
+    """O ponto da coluna H: F volta a ser 'quanto falta classificar'.
+
+    Exato, nao aproximado - senao F fica oscilando em 1 centavo por causa do
+    arredondamento do resumo do PDF, e o zero deixa de ser legivel.
+    """
+    assert not fatura.pendentes
+    aplica(planilha, [fatura])
+    ws = openpyxl.load_workbook(planilha)["Cartao"]
+    soma = sum(Decimal(str(ws[f"{c}11"].value)) for c in "CDE")
+    assert soma == Decimal(str(ws["H11"].value))
+
+
+def test_pendente_aparece_na_coluna_f(planilha, fatura):
+    """Com --ignorar-pendentes, F mostra exatamente o que falta classificar."""
+    pendente = fatura.transacoes[1]
+    pendente.bucket = None  # simula merchant sem categoria
+    aplica(planilha, [fatura])
+
+    ws = openpyxl.load_workbook(planilha)["Cartao"]
+    soma = sum(Decimal(str(ws[f"{c}11"].value)) for c in "CDE")
+    assert Decimal(str(ws["H11"].value)) - soma == pendente.valor
+
+
+def test_h_nasce_com_formato_de_moeda(planilha, fatura):
+    """Sem copiar o estilo da vizinha, H sairia como numero cru."""
+    aplica(planilha, [fatura])
+    ws = openpyxl.load_workbook(planilha)["Cartao"]
+    assert ws["H11"].number_format == ws["E11"].number_format
+    assert ws.column_dimensions["H"].width >= 18
 
 
 def test_backup_e_criado_antes_de_escrever(planilha, fatura):
@@ -81,10 +140,11 @@ def test_outras_abas_sobrevivem(planilha, fatura):
     assert wb["Outra Aba"]["A1"].value == "nao pode ser tocada"
 
 
-def test_observacao_explica_o_residuo_da_coluna_f(fatura):
+def test_observacao_explica_a_diferenca_entre_b_e_h(fatura):
+    """B e H divergem pelo saldo carregado; isso precisa estar escrito."""
     texto = observacao(fatura)
-    assert "gasto do periodo" in texto
-    assert "ajuste de saldo" in texto  # a fixture tem fatura_anterior != pagamentos
+    assert "B-H" in texto
+    assert "saldo da fatura anterior" in texto
 
 
 def test_segunda_aplicacao_nao_muda_nada(planilha, fatura):

@@ -132,19 +132,36 @@ python -m nubank status     # ve as colunas mudarem
 python -m nubank export     # dry-run, celula a celula
 ```
 
-### A coluna F da planilha
+### As colunas B e H
 
-`Fatura total` (coluna B) e "quanto voce gastou no periodo" **nao sao a mesma
-coisa**. B inclui o saldo que veio da fatura anterior menos o que voce pagou.
-C+D+E cobrem so os lancamentos do periodo. A diferenca e sempre:
+`Fatura total` (B) e `Gasto do periodo` (H) **nao sao a mesma coisa**:
 
 ```
-coluna F  =  fatura anterior - pagamentos
+B  Fatura total      = total a pagar, o que sai do bolso no vencimento
+H  Gasto do periodo  = tudo que a fatura lancou entre o fechamento anterior e o atual
+B - H                = saldo que veio da fatura anterior (anterior - pagamentos)
 ```
 
-Por isso F fica em `-49,99` no mes em que voce pagou R$ 50 a mais: nao e gasto
-perdido nem bug, e ajuste de saldo. A coluna G (Observacoes) escreve isso em
-cada linha para voce nao caçar um bug que nao existe.
+No mes em que voce paga R$ 50 a mais, B fica R$ 50 abaixo de H. Isso nao e
+gasto perdido nem bug: e credito carregado. A coluna G escreve a conta em cada
+linha.
+
+**Quem C+D+E decompoem e H, nao B.** Por isso a coluna F (`Nao classificado`)
+confere contra H:
+
+```
+F  =  H - SOMA(C:E)      ->  zero quando esta tudo classificado
+```
+
+Se F fosse contra B, ela mostraria o saldo carregado — um numero grande e
+vermelho numa coluna cujo nome promete outra coisa. Como a planilha nasceu sem
+a coluna H, o `export` cuida disso: escreve o cabecalho de H e reescreve as
+formulas de F na primeira vez que roda, e depois e idempotente.
+
+H sai da **soma das transacoes**, nao de `compras + IOF + outros` do resumo do
+PDF. Os dois divergem em 1 centavo em metade das faturas (arredondamento do
+Nubank), e como C/D/E vem das transacoes, usar o resumo faria F oscilar entre
+`0,01` e `-0,01` em vez de mostrar zero limpo.
 
 ### Escrita na planilha
 
@@ -152,8 +169,14 @@ cada linha para voce nao caçar um bug que nao existe.
   escreve nada.
 - `export --apply` copia a planilha para `backups/` com carimbo de data e hora
   **antes** de escrever.
-- A coluna F nunca e escrita: ela e formula.
+- Escreve `B`, `C`, `D`, `E`, `G` e `H` das linhas de mes, mais o cabecalho de
+  `H`, o total de `H` e as formulas de `F`. Nada fora disso e tocado.
 - Rodar o export duas vezes seguidas nao muda nada na segunda.
+
+O round-trip do openpyxl foi verificado contra a planilha real: as 21 formulas
+de matriz do Painel e do Controle Mensal saem byte a byte identicas, e estilos,
+formatos de numero, larguras de coluna e formatacao condicional sao
+preservados.
 
 ## Arquivos
 
