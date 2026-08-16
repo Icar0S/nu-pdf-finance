@@ -22,7 +22,6 @@ from pathlib import Path
 from .export import (
     ABA,
     COLUNA_GASTO,
-    LINHA_CABECALHO,
     formula_nao_classificado,
     formula_total,
 )
@@ -120,6 +119,66 @@ def regras() -> list[Regra]:
         )
     )
     return lista
+
+
+@dataclass(frozen=True)
+class ValorEsperado:
+    """O numero que a celula deve exibir, calculado a partir da fonte."""
+
+    celula: str
+    mes: str
+    valor: float
+    fonte: str
+
+
+def valores_esperados(planilha: str | Path) -> list[ValorEsperado]:
+    """Calcula o que as celulas ligadas devem mostrar quando a planilha abrir.
+
+    Existe porque conferir o texto da formula nao basta: a formula pode estar
+    certa no arquivo e a tela mostrar outra coisa - Excel aberto desde antes de
+    a ferramenta escrever exibe a copia velha que ele tem em memoria, e nao o
+    que esta em disco. Com os numeros na mao da para comparar com a tela e
+    saber na hora se e isso.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(planilha)
+    gastos = wb[ABA_GASTOS]
+    cartao = wb[ABA]
+    meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago",
+             "set", "out", "nov", "dez"]
+
+    esperados: list[ValorEsperado] = []
+    for i, linha in enumerate(range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1)):
+        coluna_mes = 2 + i  # B = janeiro
+        total = sum(
+            gastos.cell(r, coluna_mes).value or 0
+            for r in range(4, 12)
+            if isinstance(gastos.cell(r, coluna_mes).value, (int, float))
+        )
+        esperados.append(
+            ValorEsperado(
+                celula=f"E{linha}",
+                mes=f"{meses[i]}/26",
+                valor=float(total),
+                fonte=f"soma de {ABA_GASTOS}!{chr(65 + coluna_mes - 1)}4:"
+                f"{chr(65 + coluna_mes - 1)}11",
+            )
+        )
+
+    for i, linha in enumerate(range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1)):
+        valor = cartao[f"B{linha}"].value
+        if isinstance(valor, (int, float)):
+            esperados.append(
+                ValorEsperado(
+                    celula=f"F{linha}",
+                    mes=f"{meses[i]}/26",
+                    valor=float(valor),
+                    fonte=f"{ABA}!B{linha}",
+                )
+            )
+    wb.close()
+    return esperados
 
 
 def _normaliza(formula: str | None) -> str | None:

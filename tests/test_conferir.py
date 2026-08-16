@@ -128,3 +128,28 @@ def test_reparo_e_idempotente(planilha):
     assert confere(planilha) == []
     assert repara(planilha, confere(planilha)) == 0
     assert confere(planilha) == []
+
+
+@requer_planilha
+def test_valores_esperados_batem_com_a_fonte(planilha):
+    """O relatorio de valores existe para comparar com a tela do Excel.
+
+    Se ele mentir, o usuario conclui que a planilha esta certa quando nao esta,
+    ou o contrario. Confere contra a soma real da aba Gastos Fixos.
+    """
+    from nubank.conferir import valores_esperados
+
+    ws = openpyxl.load_workbook(planilha)["Gastos Fixos"]
+    esperados = {v.celula: v.valor for v in valores_esperados(planilha)}
+
+    for i in range(12):
+        total = sum(ws.cell(r, 2 + i).value or 0 for r in range(4, 12))
+        assert esperados[f"E{4 + i}"] == pytest.approx(total)
+
+
+@requer_planilha
+def test_valores_esperados_cobrem_os_doze_meses(planilha):
+    from nubank.conferir import valores_esperados
+
+    celulas = {v.celula for v in valores_esperados(planilha)}
+    assert {f"E{4 + i}" for i in range(12)} <= celulas

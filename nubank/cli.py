@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import store
 from .classify import CATEGORIAS_ESTRUTURAIS, carrega_tabela, classifica
-from .conferir import confere, repara
+from .conferir import confere, repara, valores_esperados
 from .errors import ErroFatura, ErroReconciliacao
 from .export import aplica, exporta_csv, faz_backup, planeja
 from .extract import extrai
@@ -386,6 +386,33 @@ def cmd_export(args) -> int:
 # conferir
 # --------------------------------------------------------------------------- #
 
+def _mostra_valores(planilha: Path) -> None:
+    """Imprime o que a planilha deve exibir, para comparar com a tela.
+
+    Se a tela mostrar outro numero com as formulas intactas, o Excel esta
+    exibindo a copia que ele tem em memoria desde antes de a ferramenta
+    escrever - e salvar por cima desfaz tudo.
+    """
+    esperados = valores_esperados(planilha)
+    gastos = [v for v in esperados if v.celula.startswith("E")]
+    fatura = {v.mes: v for v in esperados if v.celula.startswith("F")}
+
+    print("Com essas formulas, a aba Controle Mensal tem de mostrar:\n")
+    print(f"  {'mes':8} {'E gastos fixos':>16} {'F fatura cartao':>17}")
+    print("  " + "-" * 43)
+    for v in gastos:
+        f = fatura.get(v.mes)
+        valor_f = format_brl(Decimal(str(f.valor))) if f else "-"
+        print(
+            f"  {v.mes:8} {format_brl(Decimal(str(v.valor))):>16} {valor_f:>17}"
+        )
+    print(
+        "\nSe a sua tela mostrar outro numero, o Excel esta exibindo a copia "
+        "dele\nem memoria, nao o arquivo. Feche SEM SALVAR e abra de novo - "
+        "salvar\npor cima desfaz o conserto."
+    )
+
+
 def cmd_conferir(args) -> int:
     """Verifica as formulas que ligam as abas, e opcionalmente repara."""
     planilha = Path(args.planilha) if args.planilha else _planilha_padrao()
@@ -395,7 +422,8 @@ def cmd_conferir(args) -> int:
 
     problemas = confere(planilha)
     if not problemas:
-        print(f"{planilha.name}: todas as formulas entre abas estao no lugar.")
+        print(f"{planilha.name}: todas as formulas entre abas estao no lugar.\n")
+        _mostra_valores(planilha)
         return 0
 
     print(f"{planilha.name}: {len(problemas)} formula(s) quebrada(s).\n")
