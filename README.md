@@ -62,9 +62,21 @@ Outros comandos:
 
 ```powershell
 python -m nubank status                   # resumo do que ja foi importado
+python -m nubank conferir                 # formulas entre abas estao vivas?
+python -m nubank conferir --reparar       # restaura as que sumiram
 python -m nubank parcelas                 # parcelas futuras ja contratadas
 python -m nubank export --csv detalhe.csv # CSV linha a linha
 ```
+
+## Feche a planilha antes de rodar
+
+Se o Excel estiver com o arquivo aberto, ele guarda a propria copia em memoria
+e **sobrescreve** o que a ferramenta gravou assim que voce salvar. Ja aconteceu
+aqui: um export correto foi desfeito nove minutos depois por um salvamento do
+Excel, que ainda por cima colou o rotulo `Aporte mensal planejado` por cima de
+formulas do Controle Mensal.
+
+Rode com a planilha fechada, e abra depois.
 
 ## Como funciona
 
@@ -194,6 +206,36 @@ inclusos.
 O openpyxl continua sendo usado para ler, o que nao danifica nada.
 
 Os testes comparam o **zip cru**, nunca a leitura do openpyxl.
+
+Uma armadilha que custou caro: a **ordem dos atributos XML nao e garantida**. O
+Google Sheets grava `<row r="4" ht="18.75">`, o Excel grava
+`<row x14ac:dyDescent="0.25" r="4" ht="18.75">`. Procurar pelo texto
+`<row r="4"` funciona no primeiro e falha calado no segundo, entao tudo aqui
+parseia os atributos por nome.
+
+### `conferir`: as formulas somem sozinhas
+
+A planilha depende de formulas que atravessam abas:
+
+```
+Controle Mensal!E4:E15  ->  INDEX('Gastos Fixos'!$B$13:$M$13,1,n)
+Controle Mensal!F4:F15  ->  Cartao!$B{n}
+Gastos Fixos!B13:M13    ->  SUM(B4:B11)
+Cartao!F4:F15           ->  H{n} - SOMA(C{n}:E{n})
+```
+
+Quando a planilha e salva por um aplicativo externo, algumas dessas celulas
+foram sobrescritas por texto — na primeira vez seis, na seguinte nove. **O
+Excel nao acusa erro nenhum nisso**: a celula fica com um rotulo no lugar da
+formula, `Total saidas` encolhe, `Saldo do mes` cresce e o Painel mostra uma
+folga que nao existe. Nada fica vermelho.
+
+`conferir` verifica essas ligacoes e sai com codigo 1 se alguma sumiu.
+`--reparar` reescreve as quebradas, com backup antes. O `executar.ps1` roda a
+conferencia sozinho antes do export, e repara se precisar.
+
+So sao conferidas as formulas que atravessam abas. Formula que voce pode
+legitimamente querer mudar fica de fora.
 
 ## Arquivos
 

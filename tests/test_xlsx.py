@@ -50,6 +50,45 @@ def test_indice_coluna(letra, esperado):
     assert indice_coluna(letra) == esperado
 
 
+# O Google Sheets grava `<row r="4" ...>`, o Excel grava
+# `<row x14ac:dyDescent="0.25" r="4" ...>`. Procurar pelo texto `<row r="`
+# funciona no primeiro e falha calado no segundo.
+ABA_ORDEM_EXCEL = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    "<sheetData>"
+    '<row x14ac:dyDescent="0.25" r="4" spans="1:8">'
+    '<c s="18" r="A4"><v>46023</v></c>'
+    '<c t="s" s="71" r="E4"><v>127</v></c>'
+    "</row>"
+    "</sheetData></worksheet>"
+)
+
+
+def test_encontra_celula_com_atributos_fora_de_ordem():
+    aba = Aba(ABA_ORDEM_EXCEL, "Controle Mensal")
+    assert aba.existe("E4")
+    assert aba.estilo("E4") == "71"
+    assert aba.estilo("A4") == "18"
+
+
+def test_encontra_linha_com_atributos_fora_de_ordem():
+    """Sem isso, inserir uma celula nova levanta 'linha nao existe'."""
+    aba = Aba(ABA_ORDEM_EXCEL, "Controle Mensal")
+    aba.define_numero("H4", 4676.17, estilo="18")
+    assert '<c r="H4" s="18"><v>4676.17</v></c>' in aba.xml
+
+
+def test_formula_substitui_celula_que_virou_texto():
+    """A celula precisa perder o t="s", senao o Excel exibe o texto."""
+    aba = Aba(ABA_ORDEM_EXCEL, "Controle Mensal")
+    aba.define_formula("E4", "INDEX('Gastos Fixos'!$B$13:$M$13,1,1)", estilo="18")
+    celula = re.search(r'<c r="E4".*?</c>', aba.xml, re.DOTALL).group(0)
+    assert 't="s"' not in celula
+    assert "<v>" not in celula
+    assert "INDEX(" in celula
+
+
 def test_nao_confunde_h1_com_h16(aba):
     """Busca por prefixo casaria 'H1' dentro de 'H16'."""
     aba.define_numero("H16", 10.0, estilo="26")

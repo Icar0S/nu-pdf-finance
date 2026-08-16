@@ -18,8 +18,9 @@ from pathlib import Path
 
 from . import store
 from .classify import CATEGORIAS_ESTRUTURAIS, carrega_tabela, classifica
+from .conferir import confere, repara
 from .errors import ErroFatura, ErroReconciliacao
-from .export import aplica, exporta_csv, planeja
+from .export import aplica, exporta_csv, faz_backup, planeja
 from .extract import extrai
 from .models import Bucket, Fatura, TipoLancamento
 from .money import format_brl
@@ -382,6 +383,47 @@ def cmd_export(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# conferir
+# --------------------------------------------------------------------------- #
+
+def cmd_conferir(args) -> int:
+    """Verifica as formulas que ligam as abas, e opcionalmente repara."""
+    planilha = Path(args.planilha) if args.planilha else _planilha_padrao()
+    if planilha is None:
+        print("nao achei a planilha. Passe --planilha caminho.xlsx", file=sys.stderr)
+        return 1
+
+    problemas = confere(planilha)
+    if not problemas:
+        print(f"{planilha.name}: todas as formulas entre abas estao no lugar.")
+        return 0
+
+    print(f"{planilha.name}: {len(problemas)} formula(s) quebrada(s).\n")
+    for p in problemas:
+        print(f"  {p}")
+
+    if not args.reparar:
+        print(
+            "\nEssas celulas nao estao puxando o valor da outra aba, e o Excel "
+            "nao acusa erro nisso: a conta segue com o numero errado.\n"
+            "Para consertar:  python -m nubank conferir --reparar"
+        )
+        return 1
+
+    backup = faz_backup(planilha)
+    n = repara(planilha, problemas)
+    print(f"\nbackup: {backup}")
+    print(f"{n} formula(s) restaurada(s).")
+
+    restantes = confere(planilha)
+    if restantes:
+        print(f"ATENCAO: {len(restantes)} ainda quebrada(s).", file=sys.stderr)
+        return 1
+    print("conferido de novo: tudo no lugar.")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # parcelas
 # --------------------------------------------------------------------------- #
 
@@ -470,6 +512,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="exporta mesmo com merchants sem categoria",
     )
     s.set_defaults(func=cmd_export)
+
+    s = sub.add_parser(
+        "conferir", help="verifica as formulas que ligam as abas da planilha"
+    )
+    s.add_argument("--planilha", help="caminho do .xlsx")
+    s.add_argument(
+        "--reparar", action="store_true", help="reescreve as formulas quebradas"
+    )
+    s.set_defaults(func=cmd_conferir)
 
     s = sub.add_parser("parcelas", help="projeta as parcelas futuras ja contratadas")
     s.set_defaults(func=cmd_parcelas)

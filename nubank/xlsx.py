@@ -29,6 +29,7 @@ from .errors import ErroExport
 
 CAMINHO_WORKBOOK = "xl/workbook.xml"
 CAMINHO_RELS = "xl/_rels/workbook.xml.rels"
+FIM_ROW = "</row>"
 
 
 def indice_coluna(letras: str) -> int:
@@ -47,6 +48,17 @@ def parte_ref(ref: str) -> tuple[str, int]:
     return m.group(1).upper(), int(m.group(2))
 
 
+def atributos(tag: str) -> dict[str, str]:
+    """Atributos de uma tag XML, por nome.
+
+    A ordem nao e garantida e varia com quem gravou o arquivo: o Google Sheets
+    escreve `<row r="1" ht="18.75">`, o Excel escreve
+    `<row x14ac:dyDescent="0.25" r="1" ht="18.75">`. Procurar por `<row r="`
+    funciona num e falha silenciosamente no outro.
+    """
+    return dict(re.findall(r'([\w:.-]+)="([^"]*)"', tag))
+
+
 class Aba:
     """O XML de uma aba, com operacoes de celula sobre o texto cru."""
 
@@ -59,17 +71,31 @@ class Aba:
     def _localiza(self, ref: str) -> tuple[int, int, str, str | None] | None:
         """(inicio, fim, tag_de_abertura, corpo) da celula, ou None.
 
-        O fecha-aspas no alvo de busca e o que impede 'H1' de casar com 'H16'.
+        Varre as tags e compara o atributo `r` ja parseado, em vez de procurar
+        pelo texto `<c r="REF"`: a ordem dos atributos depende de quem gravou o
+        arquivo, e assumir uma ordem falha calada.
         """
-        inicio = self.xml.find(f'<c r="{ref}"')
-        if inicio == -1:
-            return None
-        fim_tag = self.xml.index(">", inicio)
-        abertura = self.xml[inicio : fim_tag + 1]
-        if abertura.endswith("/>"):
-            return inicio, fim_tag + 1, abertura, None
-        fecha = self.xml.index("</c>", fim_tag)
-        return inicio, fecha + 4, abertura, self.xml[fim_tag + 1 : fecha]
+        for m in re.finditer(r"<c\b[^>]*>", self.xml):
+            tag = m.group(0)
+            if atributos(tag).get("r") != ref:
+                continue
+            if tag.endswith("/>"):
+                return m.start(), m.end(), tag, None
+            fecha = self.xml.index("</c>", m.end())
+            return m.start(), fecha + 4, tag, self.xml[m.end() : fecha]
+        return None
+
+    def _localiza_linha(self, numero: int) -> tuple[int, int, str] | None:
+        """(inicio, fim, xml_inteiro) da <row>, ou None."""
+        for m in re.finditer(r"<row\b[^>]*>", self.xml):
+            tag = m.group(0)
+            if atributos(tag).get("r") != str(numero):
+                continue
+            if tag.endswith("/>"):
+                return m.start(), m.end(), tag
+            fecha = self.xml.index("</row>", m.end())
+            return m.start(), fecha + 6, self.xml[m.start() : fecha + 6]
+        return None
 
     def existe(self, ref: str) -> bool:
         return self._localiza(ref) is not None
@@ -108,30 +134,30 @@ class Aba:
         coluna, linha = parte_ref(ref)
         alvo = indice_coluna(coluna)
 
-        m = re.search(
-            r'<row r="' + str(linha) + r'"[^>]*?(?:/>|>.*?</row>)', self.xml, re.S
-        )
-        if not m:
+        achado = self._localiza_linha(linha)
+        if not achado:
             raise ErroExport(
                 f"aba '{self.nome}': linha {linha} nao existe, nao sei onde por {ref}."
             )
-        row_xml = m.group(0)
+        inicio, fim, row_xml = achado
 
         if row_xml.endswith("/>"):  # linha vazia e auto-fechada
-            nova = row_xml[:-2] + ">" + elemento + "</row>"
-            self.xml = self.xml[: m.start()] + nova + self.xml[m.end() :]
+            nova = row_xml[:-2] + ">" + elemento + FIM_ROW
+            self.xml = self.xml[:inicio] + nova + self.xml[fim:]
             return
 
         posicao = None
-        for c in re.finditer(r'<c r="([A-Z]+)\d+"', row_xml):
-            if indice_coluna(c.group(1)) > alvo:
+        for c in re.finditer(r"<c\b[^>]*>", row_xml):
+            ref_atual = atributos(c.group(0)).get("r", "")
+            m_col = re.match(r"([A-Z]+)", ref_atual)
+            if m_col and indice_coluna(m_col.group(1)) > alvo:
                 posicao = c.start()
                 break
         if posicao is None:
-            posicao = row_xml.rindex("</row>")
+            posicao = row_xml.rindex(FIM_ROW)
 
         nova = row_xml[:posicao] + elemento + row_xml[posicao:]
-        self.xml = self.xml[: m.start()] + nova + self.xml[m.end() :]
+        self.xml = self.xml[:inicio] + nova + self.xml[fim:]
 
     def _monta(self, ref: str, corpo: str, tipo: str | None, estilo: str | None) -> str:
         estilo = estilo if estilo is not None else self.estilo(ref)
@@ -243,19 +269,13 @@ class Planilha:
             self.partes = {nome: z.read(nome) for nome in self.ordem}
         self._abas: dict[str, Aba] = {}
 
-    @staticmethod
-    def _atributos(tag: str) -> dict[str, str]:
-        """A ordem dos atributos nao e garantida: o Excel escreve name antes de
-        r:id, o openpyxl escreve Target antes de Id. Extrai por nome."""
-        return dict(re.findall(r'([\w:]+)="([^"]*)"', tag))
-
     def _caminho_da_aba(self, nome: str) -> str:
         wb = self.partes[CAMINHO_WORKBOOK].decode("utf-8")
         rels = self.partes[CAMINHO_RELS].decode("utf-8")
 
         rid = None
         for tag in re.findall(r"<sheet\b[^>]*/?>", wb):
-            attrs = self._atributos(tag)
+            attrs = atributos(tag)
             if attrs.get("name") == nome:
                 rid = attrs.get("r:id") or attrs.get("id")
                 break
@@ -263,7 +283,7 @@ class Planilha:
             raise ErroExport(f"a planilha nao tem a aba '{nome}'.")
 
         for tag in re.findall(r"<Relationship\b[^>]*/?>", rels):
-            attrs = self._atributos(tag)
+            attrs = atributos(tag)
             if attrs.get("Id") == rid:
                 alvo = attrs.get("Target", "").lstrip("/")
                 return alvo if alvo.startswith("xl/") else f"xl/{alvo}"

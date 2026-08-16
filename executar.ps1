@@ -71,7 +71,7 @@ Set-StrictMode -Version Latest
 # --------------------------------------------------------------------------- #
 
 $script:Etapa = 0
-$script:TotalEtapas = 6
+$script:TotalEtapas = 7
 
 function Write-Etapa {
     param([string]$Texto)
@@ -266,7 +266,24 @@ Instale em https://www.python.org/downloads/ marcando
         Assert-ExitCode "falhou na revisao de merchants."
     }
 
-    # ------------------------------------------------------------- 6. export
+    # ----------------------------------------------------------- 6. conferir
+    Write-Etapa "Formulas da planilha"
+
+    $argsConferir = @("-m", "nubank", "conferir")
+    if ($Planilha) { $argsConferir += @("--planilha", $Planilha) }
+
+    & $VenvPython @argsConferir
+    if ($LASTEXITCODE -ne 0) {
+        # Nao e fatal: o export escreve valores, e as formulas quebradas estao
+        # em outra aba. Mas seguir sem avisar deixaria o Painel mentindo.
+        Write-Host ""
+        Write-Aviso "formula(s) quebrada(s) acima. Reparando..."
+        Write-Host ""
+        & $VenvPython @($argsConferir + @("--reparar"))
+        Assert-ExitCode "nao consegui reparar as formulas da planilha."
+    }
+
+    # ------------------------------------------------------------- 7. export
     Write-Etapa "Export para a planilha"
 
     $argsExport = @("-m", "nubank", "export")
