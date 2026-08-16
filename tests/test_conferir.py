@@ -85,7 +85,7 @@ def test_reparo_nao_deixa_a_celula_como_texto(planilha):
     repara(planilha, confere(planilha))
 
     ws = openpyxl.load_workbook(planilha)["Controle Mensal"]
-    assert str(ws["E6"].value).startswith("=INDEX(")
+    assert ws["E6"].value == "='Gastos Fixos'!$D$13"  # D = marco
 
 
 @requer_planilha
@@ -184,3 +184,32 @@ def test_reparo_grava_valor_em_cache_junto_da_formula(planilha):
     esperado = sum(ws.cell(r, 4).value or 0 for r in range(4, 12))  # coluna D = marco
     achado = float(re.search(r"<v>([\d.-]+)</v>", celula).group(1))
     assert achado == pytest.approx(esperado)
+
+
+@requer_planilha
+def test_gastos_fixos_usa_referencia_direta_nao_funcao(planilha):
+    """A forma mais simples possivel, para nao depender do motor do leitor.
+
+    INDEX(linha_fixa, 1, indice_constante) e uma referencia de celula com
+    passos a mais. A forma direta e lida por qualquer programa que abra
+    planilha; a com funcao quebra em visualizadores de motor parcial.
+    """
+    for regra in regras():
+        if regra.aba == "Controle Mensal" and regra.celula.startswith("E"):
+            assert "INDEX" not in regra.formula
+            assert regra.formula.startswith("'Gastos Fixos'!$")
+            assert regra.formula.endswith("$13")
+
+
+@requer_planilha
+def test_cada_mes_aponta_para_a_coluna_certa(planilha):
+    """E4 -> B (janeiro) ... E15 -> M (dezembro)."""
+    esperado = {
+        f"E{4 + i}": f"'Gastos Fixos'!${chr(ord('B') + i)}$13" for i in range(12)
+    }
+    achado = {
+        r.celula: r.formula
+        for r in regras()
+        if r.aba == "Controle Mensal" and r.celula.startswith("E")
+    }
+    assert achado == esperado

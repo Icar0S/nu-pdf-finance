@@ -56,8 +56,9 @@ class Problema:
 
     def __str__(self) -> str:
         atual = "(sem formula)" if self.sumiu else self.encontrado
+        marca = "SUMIU" if self.sumiu else "difere"
         return (
-            f"{self.regra.aba}!{self.regra.celula}  {self.regra.o_que}\n"
+            f"[{marca}] {self.regra.aba}!{self.regra.celula}  {self.regra.o_que}\n"
             f"      esperado: {self.regra.formula}\n"
             f"      achado:   {atual}"
         )
@@ -67,15 +68,18 @@ def regras() -> list[Regra]:
     """As ligacoes entre abas que a planilha depende."""
     lista: list[Regra] = []
 
-    for i, linha in enumerate(range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1), start=1):
+    for i, linha in enumerate(range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1)):
+        # Referencia direta em vez de INDEX(linha_fixa, 1, indice_constante),
+        # que era a forma original. As duas dao o mesmo numero, mas a direta e
+        # entendida por qualquer coisa que leia planilha - incluindo os
+        # visualizadores de motor parcial, que engasgam em INDEX e mostram erro
+        # onde o Excel e o Google Planilhas mostram o valor certo.
+        coluna_mes = chr(ord("B") + i)
         lista.append(
             Regra(
                 aba=ABA_CONTROLE,
                 celula=f"E{linha}",
-                formula=(
-                    f"INDEX('{ABA_GASTOS}'!$B${LINHA_TOTAL_GASTOS}:"
-                    f"$M${LINHA_TOTAL_GASTOS},1,{i})"
-                ),
+                formula=f"'{ABA_GASTOS}'!${coluna_mes}${LINHA_TOTAL_GASTOS}",
                 o_que="gastos fixos do mes",
             )
         )

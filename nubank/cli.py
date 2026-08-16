@@ -426,16 +426,30 @@ def cmd_conferir(args) -> int:
         _mostra_valores(planilha)
         return 0
 
-    print(f"{planilha.name}: {len(problemas)} formula(s) quebrada(s).\n")
+    sumiram = sum(1 for p in problemas if p.sumiu)
+    diferem = len(problemas) - sumiram
+    resumo = []
+    if sumiram:
+        resumo.append(f"{sumiram} sumiu(ram)")
+    if diferem:
+        resumo.append(f"{diferem} em forma diferente da esperada")
+    print(f"{planilha.name}: {', '.join(resumo)}.\n")
     for p in problemas:
         print(f"  {p}")
 
     if not args.reparar:
-        print(
-            "\nEssas celulas nao estao puxando o valor da outra aba, e o Excel "
-            "nao acusa erro nisso: a conta segue com o numero errado.\n"
-            "Para consertar:  python -m nubank conferir --reparar"
-        )
+        if sumiram:
+            print(
+                "\nCelula que sumiu nao puxa valor nenhum da outra aba, e nada "
+                "acusa erro: a conta segue com o numero errado."
+            )
+        if diferem:
+            print(
+                "\nAs que diferem dao o mesmo numero, mas na forma que a "
+                "ferramenta escreve elas sao lidas por qualquer programa - "
+                "inclusive visualizadores que engasgam em funcao mais elaborada."
+            )
+        print("\nPara ajustar:  python -m nubank conferir --reparar")
         return 1
 
     backup = faz_backup(planilha)
