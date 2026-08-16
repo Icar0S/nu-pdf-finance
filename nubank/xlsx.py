@@ -177,9 +177,21 @@ class Aba:
         self._substitui(ref, self._monta(ref, corpo, "inlineStr", estilo))
 
     def define_formula(
-        self, ref: str, formula: str, estilo: str | None = None
+        self,
+        ref: str,
+        formula: str,
+        estilo: str | None = None,
+        valor: float | None = None,
     ) -> None:
-        """Escreve a formula sem valor em cache, para o Excel recalcular.
+        """Escreve a formula e, quando dado, o valor em cache dela.
+
+        O cache importa: quem abre o arquivo sem avaliar formula nenhuma - o
+        preview do editor, um visualizador leve, o pandas - mostra o `<v>` e so.
+        Sem ele, essas ferramentas tentam avaliar `INDEX(...)` por conta propria
+        e exibem lixo ou erro, ainda que o Excel abra a mesma planilha certa.
+
+        Nao ha risco de o cache ficar velho: `recalcular_ao_abrir` marca
+        fullCalcOnLoad, entao o Excel recalcula tudo e sobrescreve.
 
         Se a celula for a mestra de uma formula compartilhada, os atributos
         `t="shared"`, `ref` e `si` sao preservados: as celulas irmas derivam do
@@ -194,6 +206,8 @@ class Aba:
         # O conteudo de <f> no OOXML nao leva o '=' inicial; quem usa isso e a
         # barra de formulas do Excel. Com o '=' o arquivo abre corrompido.
         corpo = f"<f{compartilhada}>{escape(formula.lstrip('='))}</f>"
+        if valor is not None:
+            corpo += f"<v>{valor:.2f}</v>"
         self._substitui(ref, self._monta(ref, corpo, None, estilo))
 
     def largura_coluna(self, coluna: str, largura: float) -> None:

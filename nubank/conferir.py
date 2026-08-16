@@ -131,6 +131,62 @@ class ValorEsperado:
     fonte: str
 
 
+def cache_das_formulas(planilha: str | Path) -> dict[tuple[str, str], float]:
+    """(aba, celula) -> valor que a formula produz, calculado da fonte.
+
+    Serve para gravar o `<v>` junto da formula. Cobre so as celulas cujas
+    formulas sao conhecidas e cujo resultado da para calcular aqui em Python.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(planilha)
+    gastos = wb[ABA_GASTOS]
+    cartao = wb[ABA]
+
+    cache: dict[tuple[str, str], float] = {}
+
+    # Gastos Fixos!{coluna}13 = SUM({coluna}4:{coluna}11)
+    totais_mes: list[float] = []
+    for i in range(12):
+        coluna_idx = 2 + i
+        total = float(
+            sum(
+                gastos.cell(r, coluna_idx).value or 0
+                for r in range(4, 12)
+                if isinstance(gastos.cell(r, coluna_idx).value, (int, float))
+            )
+        )
+        totais_mes.append(total)
+        cache[(ABA_GASTOS, f"{chr(64 + coluna_idx)}{LINHA_TOTAL_GASTOS}")] = total
+
+    for i, linha in enumerate(range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1)):
+        cache[(ABA_CONTROLE, f"E{linha}")] = totais_mes[i]
+
+        fatura = cartao[f"B{linha}"].value
+        if isinstance(fatura, (int, float)):
+            cache[(ABA_CONTROLE, f"F{linha}")] = float(fatura)
+
+        # Cartao!F = H - (C+D+E): o que falta classificar, zero quando esta tudo.
+        h = cartao[f"{COLUNA_GASTO}{linha}"].value
+        if isinstance(h, (int, float)):
+            classificado = sum(
+                cartao[f"{c}{linha}"].value or 0
+                for c in "CDE"
+                if isinstance(cartao[f"{c}{linha}"].value, (int, float))
+            )
+            cache[(ABA, f"F{linha}")] = float(h) - float(classificado)
+
+    total_h = sum(
+        cartao[f"{COLUNA_GASTO}{linha}"].value or 0
+        for linha in range(PRIMEIRA_LINHA, ULTIMA_LINHA + 1)
+        if isinstance(cartao[f"{COLUNA_GASTO}{linha}"].value, (int, float))
+    )
+    cache[(ABA, f"{COLUNA_GASTO}{ULTIMA_LINHA + 1}")] = float(total_h)
+
+    wb.close()
+    return cache
+
+
 def valores_esperados(planilha: str | Path) -> list[ValorEsperado]:
     """Calcula o que as celulas ligadas devem mostrar quando a planilha abrir.
 
@@ -206,6 +262,7 @@ def repara(planilha: str | Path, problemas: list[Problema]) -> int:
     O estilo da celula e herdado de uma irma saudavel da mesma coluna quando a
     quebrada ficou com o estilo de texto que veio junto com o valor colado.
     """
+    cache = cache_das_formulas(planilha)
     doc = Planilha(planilha)
     for problema in problemas:
         aba = doc.aba(problema.regra.aba)
@@ -213,6 +270,7 @@ def repara(planilha: str | Path, problemas: list[Problema]) -> int:
             problema.regra.celula,
             problema.regra.formula,
             estilo=_estilo_saudavel(aba, problema.regra),
+            valor=cache.get((problema.regra.aba, problema.regra.celula)),
         )
     doc.recalcular_ao_abrir()
     doc.salva()

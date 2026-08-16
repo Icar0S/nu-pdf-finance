@@ -153,3 +153,34 @@ def test_valores_esperados_cobrem_os_doze_meses(planilha):
 
     celulas = {v.celula for v in valores_esperados(planilha)}
     assert {f"E{4 + i}" for i in range(12)} <= celulas
+
+
+@requer_planilha
+def test_reparo_grava_valor_em_cache_junto_da_formula(planilha):
+    """Sem o <v>, quem abre o arquivo precisa avaliar a formula sozinho.
+
+    O preview do editor, um visualizador leve e o pandas nao avaliam: resolvem
+    uma referencia simples como `Cartao!$B4`, mas em `INDEX(...)` mostram erro
+    ou lixo. Foi o que aconteceu - a coluna E exibia #SYNTAX e valores de outra
+    aba enquanto o arquivo estava correto para o Excel.
+    """
+    import re
+    import zipfile
+
+    doc = Planilha(planilha)
+    doc.aba("Controle Mensal").define_texto("E6", "Aporte mensal planejado")
+    doc.salva()
+
+    repara(planilha, confere(planilha))
+
+    with zipfile.ZipFile(planilha) as z:
+        xml = z.read("xl/worksheets/sheet2.xml").decode()
+    celula = re.search(r'<c r="E6".*?</c>', xml, re.DOTALL).group(0)
+
+    assert "<f>" in celula, "a formula tem de estar la"
+    assert "<v>" in celula, "e o valor em cache tambem"
+
+    ws = openpyxl.load_workbook(planilha, data_only=True)["Gastos Fixos"]
+    esperado = sum(ws.cell(r, 4).value or 0 for r in range(4, 12))  # coluna D = marco
+    achado = float(re.search(r"<v>([\d.-]+)</v>", celula).group(1))
+    assert achado == pytest.approx(esperado)

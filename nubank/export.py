@@ -54,6 +54,9 @@ COLUNA_GASTO = "H"
 CABECALHO_GASTO = "Gasto do periodo"
 LARGURA_GASTO = 18
 
+# Os tres baldes que C, D e E decompoem.
+_BUCKETS_PLANILHA = (Bucket.PARCELAS, Bucket.ESSENCIAL, Bucket.SUPERFLUO)
+
 # Colunas de onde o estilo de H e copiado, para H nascer com o mesmo formato de
 # moeda e o mesmo visual de cabecalho do resto da aba.
 MOLDE_CABECALHO = "E"
@@ -309,20 +312,32 @@ def aplica(planilha: str | Path, faturas: list[Fatura]) -> tuple[Path, list[Muda
     )
     aba.largura_coluna(COLUNA_GASTO, LARGURA_GASTO)
 
+    # O valor de F por competencia: o que sobrou sem classificar, zero quando
+    # esta tudo. Vai como cache junto da formula, para quem abre o arquivo sem
+    # avaliar formula (preview do editor, visualizador leve) ver o numero em
+    # vez de tentar calcular e mostrar erro.
+    residuo = {
+        linhas_por_competencia[f.competencia]: to_float(
+            gasto_do_periodo(f)
+            - sum(
+                (f.total_bucket(b) for b in _BUCKETS_PLANILHA),
+                start=Decimal("0.00"),
+            )
+        )
+        for f in faturas
+    }
+
     # F4 e a mestra de uma formula compartilhada (ref F4:F15): reescrever o
     # texto dela ja desloca as irmas por linha. As demais so entram aqui se a
     # planilha nao usar formula compartilhada.
     for linha in linhas_dados:
         celula = f"F{linha}"
         if aba.formula(celula) is not None:
-            aba.define_formula(celula, formula_nao_classificado(linha))
-
-    if linha_total and linhas_dados:
-        aba.define_formula(
-            f"{COLUNA_GASTO}{linha_total}",
-            formula_total(COLUNA_GASTO, linhas_dados[0], linhas_dados[-1]),
-            estilo=aba.estilo(f"{MOLDE_VALOR}{linha_total}"),
-        )
+            aba.define_formula(
+                celula,
+                formula_nao_classificado(linha),
+                valor=residuo.get(linha),
+            )
 
     for fatura in faturas:
         linha = linhas_por_competencia[fatura.competencia]
@@ -334,6 +349,19 @@ def aplica(planilha: str | Path, faturas: list[Fatura]) -> tuple[Path, list[Muda
             else:
                 estilo = None if aba.existe(ref) else molde
                 aba.define_numero(ref, valor, estilo=estilo)
+
+    # Depois dos valores de H, para o total poder somar o que foi escrito.
+    if linha_total and linhas_dados:
+        aba.define_formula(
+            f"{COLUNA_GASTO}{linha_total}",
+            formula_total(COLUNA_GASTO, linhas_dados[0], linhas_dados[-1]),
+            estilo=aba.estilo(f"{MOLDE_VALOR}{linha_total}"),
+            valor=to_float(
+                sum(
+                    (gasto_do_periodo(f) for f in faturas), start=Decimal("0.00")
+                )
+            ),
+        )
 
     doc.recalcular_ao_abrir()
     doc.salva()
